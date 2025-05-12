@@ -53,6 +53,7 @@ const Repositories = () => {
       setSyncLoading(true);
       setSuccessMessage("");
       await repositoryAPI.syncAll();
+      await fetchRepositories(); // Refresh the repository list after sync
       setSuccessMessage("All repository data synchronized successfully");
     } catch (err) {
       console.error("Error syncing all repositories:", err);
@@ -72,6 +73,22 @@ const Repositories = () => {
     }
   };
 
+  const handleSyncRepository = async (fullName, e) => {
+    e.stopPropagation();
+    try {
+      setSyncLoading(true);
+      setSuccessMessage("");
+      await repositoryAPI.syncRepository(fullName);
+      await fetchRepositories();
+      setSuccessMessage(`Repository "${fullName}" synchronized successfully`);
+    } catch (err) {
+      console.error("Error syncing repository:", err);
+      setError("Failed to sync repository. Please try again later.");
+    } finally {
+      setSyncLoading(false);
+    }
+  };
+
   const handleSearchChange = (e) => {
     setSearchTerm(e.target.value);
   };
@@ -85,37 +102,6 @@ const Repositories = () => {
     const date = new Date(dateString);
     return date.toLocaleString();
   };
-
-  // Placeholder repositories data for development
-  const placeholderRepositories = [
-    {
-      id: 1,
-      name: "Project A",
-      fullName: "user/project-a",
-      description: "This is a description for Project A - a sample project.",
-      lastSyncTime: new Date().toISOString(),
-      active: true,
-    },
-    {
-      id: 2,
-      name: "Project B",
-      fullName: "user/project-b",
-      description: "Project B - another sample project for demonstration purposes.",
-      lastSyncTime: new Date().toISOString(),
-      active: true,
-    },
-    {
-      id: 3,
-      name: "Project C",
-      fullName: "user/project-c",
-      description: "Project C is an inactive repository in this example.",
-      lastSyncTime: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(), // 7 days ago
-      active: false,
-    },
-  ];
-
-  // Use real data if available, otherwise use placeholder data
-  const displayRepositories = repositories.length > 0 ? filteredRepositories : placeholderRepositories;
 
   if (loading) {
     return (
@@ -163,7 +149,7 @@ const Repositories = () => {
         <Input placeholder="Search repositories..." value={searchTerm} onChange={handleSearchChange} className="pl-10" />
       </div>
 
-      {displayRepositories.length === 0 ? (
+      {filteredRepositories.length === 0 ? (
         <div className="text-center py-12 bg-muted/20 rounded-lg">
           <Code size={48} className="mx-auto text-muted-foreground mb-4" />
           <h2 className="text-xl font-semibold mb-2">No repositories found</h2>
@@ -176,7 +162,7 @@ const Repositories = () => {
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {displayRepositories.map((repo) => (
+          {filteredRepositories.map((repo) => (
             <div
               key={repo.id}
               className={`border rounded-lg overflow-hidden transition-all duration-300 ${repo.active ? "hover:shadow-md" : "opacity-75"}`}
@@ -214,12 +200,10 @@ const Repositories = () => {
                       variant="outline"
                       size="sm"
                       className="flex items-center gap-1"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        // Handle sync repo
-                      }}
+                      onClick={(e) => handleSyncRepository(repo.fullName, e)}
+                      disabled={syncLoading}
                     >
-                      <RefreshCw size={14} />
+                      <RefreshCw size={14} className={syncLoading ? "animate-spin" : ""} />
                       Sync
                     </Button>
 

@@ -11,4 +11,6 @@ public interface GitHubService {
     boolean syncRepositoryData(String repositoryFullName);
 
     boolean syncAllRepositories(User user);
+    
+    String getRepositoryReadme(String repositoryFullName);
 }

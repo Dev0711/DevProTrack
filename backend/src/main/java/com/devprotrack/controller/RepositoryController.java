@@ -46,6 +46,47 @@ public class RepositoryController {
         return ResponseEntity.notFound().build();
     }
 
+    @GetMapping("/{fullName}/readme")
+    public ResponseEntity<String> getRepositoryReadme(@PathVariable String fullName) {
+        try {
+            System.out.println("DEBUG: Received README request for repository: " + fullName);
+            User currentUser = userService.getCurrentUser();
+            System.out.println("DEBUG: Current user: " + currentUser.getUsername());
+            
+            // Decode the repository fullName (which comes URL-encoded)
+            String decodedFullName = java.net.URLDecoder.decode(fullName, "UTF-8");
+            System.out.println("DEBUG: Decoded fullName: " + decodedFullName);
+            
+            Optional<Repository> repository = repositoryRepository.findByFullName(decodedFullName);
+            
+            if (repository.isEmpty()) {
+                System.out.println("DEBUG: Repository not found in database: " + decodedFullName);
+                return ResponseEntity.notFound().build();
+            }
+            
+            if (!repository.get().getUser().getId().equals(currentUser.getId())) {
+                System.out.println("DEBUG: Repository owner mismatch. Repo user: " + repository.get().getUser().getId() 
+                    + ", Current user: " + currentUser.getId());
+                return ResponseEntity.notFound().build();
+            }
+            
+            System.out.println("DEBUG: Calling service to get README content");
+            String readmeContent = gitHubService.getRepositoryReadme(decodedFullName);
+            
+            if (readmeContent == null) {
+                System.out.println("DEBUG: No README content returned from service");
+                return ResponseEntity.notFound().build();
+            }
+            
+            System.out.println("DEBUG: README content found, length: " + readmeContent.length());
+            return ResponseEntity.ok(readmeContent);
+        } catch (Exception e) {
+            System.out.println("DEBUG: Exception in getRepositoryReadme: " + e.getMessage());
+            e.printStackTrace();
+            return ResponseEntity.notFound().build();
+        }
+    }
+
     @PostMapping("/sync/github")
     public ResponseEntity<?> syncGithubRepositories() {
         try {

@@ -15,6 +15,7 @@ import java.io.IOException;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.Date;
 import java.util.List;
 import java.util.Optional;
@@ -114,6 +115,117 @@ public class GitHubServiceImpl implements GitHubService {
         }
 
         return true;
+    }
+
+    @Override
+    public String getRepositoryReadme(String repositoryFullName) {
+        Optional<Repository> optRepo = repositoryRepository.findByFullName(repositoryFullName);
+        if (optRepo.isEmpty()) {
+            System.out.println("DEBUG: Repository not found in database: " + repositoryFullName);
+            throw new RuntimeException("Repository not found: " + repositoryFullName);
+        }
+
+        Repository repository = optRepo.get();
+        User user = repository.getUser();
+
+        if (user.getGithubAccessToken() == null || user.getGithubAccessToken().isEmpty()) {
+            System.out.println("DEBUG: GitHub access token not found for user: " + user.getUsername());
+            throw new RuntimeException("GitHub access token not found for user");
+        }
+
+        try {
+            System.out.println("DEBUG: Connecting to GitHub with token for user: " + user.getUsername());
+            GitHub github = GitHub.connectUsingOAuth(user.getGithubAccessToken());
+            System.out.println("DEBUG: Looking up repository: " + repositoryFullName);
+            GHRepository ghRepo = github.getRepository(repositoryFullName);
+            System.out.println("DEBUG: Found repository on GitHub: " + ghRepo.getFullName());
+            
+            // Common README file names to try
+            String[] possibleReadmeNames = {
+                "README.md", "readme.md", "README", "readme", 
+                "README.txt", "readme.txt", "README.markdown", "readme.markdown"
+            };
+            
+            // Try different README file variations
+            for (String readmeName : possibleReadmeNames) {
+                try {
+                    System.out.println("DEBUG: Attempting to fetch " + readmeName);
+                    GHContent readmeContent = ghRepo.getFileContent(readmeName);
+                    if (readmeContent != null) {
+                        System.out.println("DEBUG: " + readmeName + " found, decoding content");
+                        return new String(Base64.getDecoder().decode(readmeContent.getContent()));
+                    }
+                } catch (Exception e) {
+                    System.out.println("DEBUG: Error fetching " + readmeName + ": " + e.getMessage());
+                    // Continue to next file name
+                }
+            }
+            
+            // If no README found, look for any .md files in the root
+            try {
+                System.out.println("DEBUG: Trying to list all files in root directory to find other documentation");
+                List<GHContent> contents = ghRepo.getDirectoryContent("");
+                System.out.println("DEBUG: Files in root directory:");
+                
+                for (GHContent content : contents) {
+                    System.out.println("  - " + content.getName() + " (" + content.getType() + ")");
+                    
+                    // Check if this is a markdown file we can use as documentation
+                    if (content.getName().toLowerCase().endsWith(".md") && 
+                            !content.getName().toLowerCase().startsWith("license")) {
+                        try {
+                            System.out.println("DEBUG: Found potential documentation file: " + content.getName());
+                            return new String(Base64.getDecoder().decode(content.getContent()));
+                        } catch (Exception e) {
+                            System.out.println("DEBUG: Error fetching content of " + content.getName() + ": " + e.getMessage());
+                        }
+                    }
+                }
+                
+                // No markdown files found, check if there's a docs directory
+                for (GHContent content : contents) {
+                    if (content.isDirectory() && 
+                            (content.getName().equalsIgnoreCase("docs") || 
+                             content.getName().equalsIgnoreCase("doc") || 
+                             content.getName().equalsIgnoreCase("documentation"))) {
+                        try {
+                            System.out.println("DEBUG: Found docs directory, checking for README inside");
+                            List<GHContent> docsContents = ghRepo.getDirectoryContent(content.getPath());
+                            
+                            for (GHContent docFile : docsContents) {
+                                if (docFile.getName().toLowerCase().contains("readme") || 
+                                        docFile.getName().toLowerCase().endsWith(".md")) {
+                                    System.out.println("DEBUG: Found documentation in docs directory: " + docFile.getName());
+                                    return new String(Base64.getDecoder().decode(docFile.getContent()));
+                                }
+                            }
+                        } catch (Exception e) {
+                            System.out.println("DEBUG: Error exploring docs directory: " + e.getMessage());
+                        }
+                    }
+                }
+            } catch (Exception listEx) {
+                System.out.println("DEBUG: Error listing files in root directory: " + listEx.getMessage());
+            }
+            
+            // If we still don't have a README, create a generic one based on repository description
+            System.out.println("DEBUG: No README found, generating default content");
+            StringBuilder defaultReadme = new StringBuilder();
+            defaultReadme.append("# ").append(ghRepo.getName()).append("\n\n");
+            
+            if (ghRepo.getDescription() != null && !ghRepo.getDescription().isEmpty()) {
+                defaultReadme.append(ghRepo.getDescription()).append("\n\n");
+            }
+            
+            defaultReadme.append("This repository doesn't have a README file. You can view it on GitHub: ")
+                .append("[").append(ghRepo.getFullName()).append("](")
+                .append(ghRepo.getHtmlUrl()).append(")\n\n");
+            
+            return defaultReadme.toString();
+        } catch (IOException e) {
+            System.out.println("DEBUG: Error in GitHub API: " + e.getMessage());
+            throw new RuntimeException("Error fetching repository README: " + e.getMessage());
+        }
     }
 
     private void syncCommits(GHRepository ghRepo, Repository repository) throws IOException {

@@ -45,6 +45,31 @@ export const repositoryAPI = {
   syncRepository: (fullName) => api.post(`/api/repositories/sync/${fullName}`),
   syncAll: () => api.post("/api/repositories/sync/all"),
   toggleActive: (id, active) => api.put(`/api/repositories/${id}/active?active=${active}`),
+  getReadme: (fullName) => api.get(`/api/repositories/${encodeURIComponent(fullName)}/readme`),
+  
+  // Direct GitHub fallback method
+  getReadmeDirectFromGitHub: async (fullName) => {
+    const [owner, repo] = fullName.split('/');
+    // Try both main and master branches with different README filenames
+    const branches = ['main', 'master'];
+    const fileNames = ['README.md', 'readme.md', 'README.markdown'];
+    
+    for (const branch of branches) {
+      for (const fileName of fileNames) {
+        try {
+          const rawUrl = `https://raw.githubusercontent.com/${owner}/${repo}/${branch}/${fileName}`;
+          const response = await fetch(rawUrl);
+          if (response.ok) {
+            return { data: await response.text() };
+          }
+        } catch (err) {
+          console.log(`Failed direct GitHub fetch: ${branch}/${fileName}`);
+        }
+      }
+    }
+    
+    throw new Error('No README found on GitHub');
+  }
 };
 
 export const analyticsAPI = {
